@@ -27,6 +27,10 @@ yarn-offline-mirror = js/yarn_workspace_example/third_party
 buildah-policy = //third_party/buildah:policy
 buildah-registries = //third_party/buildah:registries
 buildah-tool = //third_party/buildah:buildah
+; terraform
+terraform-module-builder-src = //terraform/scripts:module_builder
+terraform-runner-src = //terraform/scripts:runner
+terraform-workspace-builder-src = //terraform/scripts:workspace_builder
 
 [proto]
 protoctool = //third_party/proto:protoc
