@@ -1,0 +1,13 @@
+  
+name: Buildah Examples
+on: [push]
+jobs:
+  builah:
+    name: Buildah Examples
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v2
+
+      - name: Build
+        run: ./pleasew build //buildah/...

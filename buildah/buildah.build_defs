@@ -1,0 +1,134 @@
+"""Build rules for working with Buildah (https://github.com/containers/buildah)
+"""
+
+# The repository to prefix container repositories with. e.g. `index.docker.io/my-namespace/`
+BUILDAH_REPOSITORY_PREFIX = CONFIG.get('BUILDAH_REPOSITORY_PREFIX') or ""
+# The default container repository is generated from the please $PKG. This configuration allows to offset the $PKG. e.g.:
+# - a value of 0 results in //images:my-image becoming `index.docker.io/my-namespace/images/my-image`.
+# - a value of 1 results in //images:my-image becoming `index.docker.io/my-namespace/my-image`.
+BUILDAH_GENERATED_REPOSITORY_PKG_OFFSET = int(CONFIG.get('BUILDAH_GENERATED_REPOSITORY_PKG_OFFSET')) if CONFIG.get('BUILDAH_GENERATED_REPOSITORY_PKG_OFFSET') else 0
+
+# For regular use: https://raw.githubusercontent.com/containers/skopeo/master/default-policy.json
+BUILDAH_POLICY = CONFIG.get('BUILDAH_POLICY')
+# For regular use: https://raw.githubusercontent.com/containers/buildah/master/docs/samples/registries.conf
+BUILDAH_REGISTRIES = CONFIG.get('BUILDAH_REGISTRIES')
+
+BUILDAH_TOOL = CONFIG.get('BUILDAH_TOOL') or "buildah"
+
+def buildah_image(
+    name: str,
+    dockerfile: str,
+    srcs: list = [],
+    repository: str = "",
+    visibility: list = [],
+):
+    """Build rule for building a Buildah image
+    """
+
+    build_context_rule = _build_context(name, [dockerfile] + srcs)
+    repository_rule=_repository(name, repository, visibility)
+    tag_rule=_tag(name, build_context_rule, visibility)
+    fqn_rule=_fqn(name, repository_rule, tag_rule, visibility)
+
+    genrule(
+        name = name,
+        srcs = {
+            "dockerfile": [dockerfile],
+            "fqn": [fqn_rule],
+            "buildah_policy": [BUILDAH_POLICY],
+            "buildah_registries": [BUILDAH_REGISTRIES],
+            "context": [build_context_rule],
+        },
+        outs = [f"{name}_image.tar"],
+        tools = [BUILDAH_TOOL],
+        cmd = f"""
+set -exuo pipefail
+export USER=$(id -un)
+tag=$(<$SRCS_FQN)
+buildah=$TOOLS
+
+buildah_config_dir="$HOME/.config/containers"
+mkdir -p "$buildah_config_dir"
+cp $SRCS_BUILDAH_POLICY "$buildah_config_dir/policy.json"
+cp $SRCS_BUILDAH_REGISTRIES "$buildah_config_dir/registries.conf"
+
+cat <<EOF > build_container.sh
+#!/bin/bash
+set -Eeuo pipefail
+tag=$tag
+$buildah bud -t $tag - < $SRCS_CONTEXT
+$buildah push --format docker $tag docker-archive:$OUTS:$tag
+EOF
+chmod +x build_container.sh
+$buildah unshare ./build_container.sh
+        """
+    )
+
+def buildah_mirror(
+    name: str,
+    src: str,
+    repository: str = "",
+    visibility: list = [],
+):
+    """Build rule for mirroring an OCI image.
+    """
+    pass
+
+
+def _build_context(
+    name: str,
+    srcs: list,
+):
+    return tarball(
+        name = f"{name}_build_context",
+        srcs = srcs,
+    )
+
+def _repository(
+    name: str,
+    repository: str = "",
+    visibility: list = [],
+):
+    if not repository:
+        repository = BUILDAH_REPOSITORY_PREFIX + "-".join(package_name().split("/")[BUILDAH_GENERATED_REPOSITORY_PKG_OFFSET:])
+    return genrule(
+        name = f"{name}_repository",
+        outs = [f"{name}_repository"],
+        cmd = f"echo \"{repository}\" > $OUTS",
+        visibility = visibility,
+        labels = ["container-repository"],
+    )
+
+def _tag(
+    name: str,
+    build_context_rule: str,
+    visibility: list = [],
+):
+    return genrule(
+        name = f"{name}_tag",
+        outs = [f"{name}_tag"],
+        srcs = [build_context_rule],
+        cmd = f"echo $(cat $SRCS | sha256sum - | cut -f1 -d\" \") > $OUTS",
+        visibility = visibility,
+    )
+
+def _fqn(
+    name: str,
+    repository_rule: str,
+    tag_rule: str,
+    visibility: list = [],
+):
+    return genrule(
+        name = f"{name}_fqn",
+        srcs = {
+            "repository": [repository_rule],
+            "tag": [tag_rule],
+        },
+        outs = [f"{name}_fqn"],
+        cmd = f"""
+repository=$(cat $SRCS_REPOSITORY)
+tag=$(cat $SRCS_TAG)
+echo "$repository:$tag" > $OUTS
+""",
+        visibility = visibility,
+    )

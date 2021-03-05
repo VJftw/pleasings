@@ -23,6 +23,10 @@ default-docker-repo = repo.please.build
 ; yarn
 yarn-workspace = //js/yarn_workspace_example:workspace
 yarn-offline-mirror = js/yarn_workspace_example/third_party
+; buildah
+buildah-policy = //third_party/buildah:policy
+buildah-registries = //third_party/buildah:registries
+buildah-tool = //third_party/buildah:buildah
 
 [proto]
 protoctool = //third_party/proto:protoc
