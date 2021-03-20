@@ -7,7 +7,6 @@ set -euo pipefail
 TERRAFORM_MINOR_VERSION="$(head -n1 < <($TERRAFORM_BIN version) | awk '{ print $2 }' | cut -f1-2 -d\.)"
 
 PLUGIN_DIR="${OUTS}/_plugins"
-MODULE_DIR="${OUTS}/_modules"
 
 mkdir -p "${OUTS}"
 
@@ -55,22 +54,15 @@ if [[ -v SRCS_PLUGINS ]]; then
 fi
 
 # modules configures modules for Terraform
-# Terraform modules via Please work by copying the module's source to
-# a relative sub-directory of the workspace and updating the reference to
-# that sub-directory.
+# Terraform modules via Please work by determining the absolute path to
+# the module source and updating the reference to that directory.
 function modules {
-    local rel_module_dir
-
-    mkdir -p "${MODULE_DIR}"
-    rel_module_dir="${MODULE_DIR//$OUTS/\.}"
-
-    for module in $SRCS_MODULES; do
-        cp -r "${module}" "${MODULE_DIR}/"
-    done
+    local abs_plz_out
+    abs_plz_out="$(dirname "$PWD" | sed "s#$PKG##" | xargs dirname | xargs dirname)"
 
     for module in "${!MODULE_PATHS[@]}"; do
         path="${MODULE_PATHS[$module]}"
-        find "${PKG_DIR}" -maxdepth 1 -name "*.tf" -exec sed -i "s#${module}#${rel_module_dir}/$(basename "${path}")#g" {} +
+        find "${PKG_DIR}" -maxdepth 1 -name "*.tf" -exec sed -i "s#${module}#${abs_plz_out}/${path}#g" {} +
     done
 }
 
@@ -88,7 +80,7 @@ function build_env_to_tf_srcs {
     find "${PKG_DIR}" -maxdepth 1 -name "*.tf" -exec sed -i "s#\$OS#${OS}#g" {} +
 }
 
-# copy modules
+# configure modules
 if [[ -v SRCS_MODULES ]]; then
     modules
 fi
@@ -99,4 +91,11 @@ build_env_to_tf_srcs
 # shift srcs into outs
 for src in $SRCS_SRCS; do 
     cp "${src}" "${OUTS}/"
+done
+
+# shift var files into outs
+SRCS_VAR_FILES=("${SRCS_VAR_FILES}")
+for i in "${!SRCS_VAR_FILES[@]}"; do
+    var_file="${SRCS_VAR_FILES[i]}"
+    cp "${var_file}" "${OUTS}/${i}-$(basename "${var_file}" | sed 's#\.tfvars#\.auto\.tfvars#')"
 done

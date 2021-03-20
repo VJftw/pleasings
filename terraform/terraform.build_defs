@@ -162,6 +162,7 @@ source "$(out_location {MODULE_BUILDER_SRC})"
 def terraform_root(
     name: str,
     srcs: list,
+    var_files: list = [],
     modules: list = [],
     providers: list = [],
     toolchain: str = None,
@@ -175,6 +176,7 @@ def terraform_root(
     Args:
         name: The name of the build rule.
         srcs: The source Terraform files for the root module.
+        vars: The var files for the Terraform root.
         modules: The Terraform modules that the srcs use.
         providers: The Terraform providers that the srcs use.
         toolchain: The Terraform toolchain to use with against the srcs.
@@ -187,7 +189,7 @@ def terraform_root(
     toolchain = toolchain or TERRAFORM_DEFAULT_TOOLCHAIN
     
     # create a workspace for terraform to use
-    workspace = _terraform_workspace(name, srcs, modules, providers, toolchain)
+    workspace = _terraform_workspace(name, srcs, var_files, modules, providers, toolchain)
 
     pre_binary_bash_array = _to_bash_array("PRE_BINARIES", [f"$(out_exe {b})" for b in pre_binaries])
     post_binary_bash_array = _to_bash_array("POST_BINARIES", [f"$(out_exe {b})" for b in post_binaries])
@@ -246,6 +248,7 @@ def _to_bash_map(var_name:str, items:dict):
 def _terraform_workspace(
     name: str,
     srcs: list,
+    var_files: list = [],
     modules: list = [],
     providers: list = [],
     toolchain: str = None,
@@ -258,9 +261,13 @@ def _terraform_workspace(
         name = f"_{name}_wd",
         outs = [f"_{name}_wd"],
         tools = [toolchain, WORKSPACE_BUILDER_SRC],
+        deps = modules + providers,
+        exported_deps = modules + providers,
+        needs_transitive_deps = True,
         srcs = {
             # srcs in other directories should be modules
             "srcs": srcs,
+            "var_files": var_files,
             "modules": modules,
             "plugins": providers,
         },
