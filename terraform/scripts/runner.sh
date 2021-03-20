@@ -6,6 +6,14 @@ set -euo pipefail
 
 ABS="${PWD}"
 
+echo "..> preparing workspace"
+plz_out_dir="$(echo "${TERRAFORM_WORKSPACE}" | cut -f1 -d/)"
+GENERATED_WORKSPACE="${TERRAFORM_WORKSPACE}"
+TERRAFORM_WORKSPACE="${ABS}/${plz_out_dir}/terraform/${GENERATED_WORKSPACE//$plz_out_dir\/gen/}"
+mkdir -p "${TERRAFORM_WORKSPACE}"
+
+rsync -ahz --info=progress2 --delete --exclude=/.terraform "${GENERATED_WORKSPACE}/" "${TERRAFORM_WORKSPACE}/"
+
 TERRAFORM_BIN="${ABS}/${TERRAFORM_BIN}"
 PATH="$(dirname "${TERRAFORM_BIN}"):$PATH"
 export PATH
