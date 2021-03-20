@@ -1,3 +1,3 @@
 variable "hello" {
-    description = "an example tf var"
+  description = "an example tf var"
 }
