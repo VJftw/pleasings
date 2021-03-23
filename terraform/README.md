@@ -84,3 +84,45 @@ It additionally adds linters under the `lint` label for:
 See `//terraform/examples/<version>/BUILD` for examples of `terraform_root`. 
 
 **NOTE**: This build rule utilises a [Terraform working directory](https://www.terraform.io/docs/cli/init/index.html) in `plz-out`, so whilst this is okay for demonstrations, you must use [Terraform Remote State](https://www.terraform.io/docs/language/state/remote.html) for your regular work. This can be added either simply through your `srcs` or through a `pre_binaries` binary.
+
+---
+
+## Usage
+
+To use this build_def in your repository, you will need multiple files:
+```
+# advice: pick the latest commit
+TERRAFORM_DEF_VERSION = "d0f1b02ae73893e695f1e50f9df2d6378f8701df"
+
+# new Terraform rules
+remote_file(
+    name = "terraform",
+    url = f"https://raw.githubusercontent.com/thought-machine/pleasings/{TERRAFORM_DEF_VERSION}/terraform/terraform.build_defs",
+    hashes = ["95289dba7ae82131a7bb69976b5cdbedb4e7563c889a5b0d10da01d643be4540"],
+    visibility = ["PUBLIC"],
+)
+
+# script for building Terraform modules
+remote_file(
+    name = "_terraform_module_builder",
+    url = f"https://raw.githubusercontent.com/thought-machine/pleasings/{TERRAFORM_DEF_VERSION}/terraform/scripts/module_builder.sh",
+    hashes = ["e1102ba9c15c29ebd98276912caf7bc45a7bc0a72780ccbbf4a077c0cc39b705"],
+    visibility = ["PUBLIC"],
+)
+
+# script for running Terraform rules
+remote_file(
+    name = "_terraform_runner",
+    url = f"https://raw.githubusercontent.com/thought-machine/pleasings/{TERRAFORM_DEF_VERSION}/terraform/scripts/runner.sh",
+    hashes = ["144ca7da9037f07010547562f1e5c099811f1245c70e782e0e738c43a3072697"],
+    visibility = ["PUBLIC"],
+)
+
+# script for building a Terraform workspace
+remote_file(
+    name = "_terraform_workspace_builder",
+    url = f"https://raw.githubusercontent.com/thought-machine/pleasings/{TERRAFORM_DEF_VERSION}/terraform/scripts/workspace_builder.sh",
+    hashes = ["ba435568d4ff9760aa72fc0bc8b92d07b606c7363f7bdefc5d4344f093d89590"],
+    visibility = ["PUBLIC"],
+)
+```
