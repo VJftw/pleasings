@@ -1,8 +1,8 @@
-name: Test
+name: Terraform Examples
 on: [push]
 jobs:
   terraform:
-    name: Test Terraform
+    name: Terraform Examples
     runs-on: ubuntu-latest
     steps:
       - name: Check out code

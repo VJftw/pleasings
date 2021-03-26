@@ -1,4 +1,3 @@
-  
 name: Buildah Examples
 on: [push]
 jobs:
@@ -11,3 +10,6 @@ jobs:
 
       - name: Build
         run: ./pleasew build //buildah/...
+
+      - name: Test
+        run: ./pleasew test //buildah/...
