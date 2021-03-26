@@ -20,7 +20,7 @@ remote_file(
 
 remote_file(
     name = "registries",
-    hashes = [""],
+    hashes = ["9cd209f73df76c799ec85ec00c065f60f3ef55265253483ce63049bc7438f3e4"],
     url = "https://raw.githubusercontent.com/containers/buildah/master/docs/samples/registries.conf",
     visibility = ["PUBLIC"],
 )

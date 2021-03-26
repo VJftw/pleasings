@@ -1,4 +1,4 @@
-"""Build rules for working with Buildah (https://github.com/containers/buildah)
+"""Build rules for working with Buildah (https://buildah.io/)
 """
 
 # The repository to prefix container repositories with. e.g. `index.docker.io/my-namespace/`
@@ -13,24 +13,37 @@ BUILDAH_POLICY = CONFIG.get('BUILDAH_POLICY')
 # For regular use: https://raw.githubusercontent.com/containers/buildah/master/docs/samples/registries.conf
 BUILDAH_REGISTRIES = CONFIG.get('BUILDAH_REGISTRIES')
 
+# BUILDAH_TOOL is the `buildah` executable to use.
 BUILDAH_TOOL = CONFIG.get('BUILDAH_TOOL') or "buildah"
+
+# BUILDAH_IMAGE_BINARY_DEFAULT_USER is the default user to set when using buildah_image_binary.
+BUILDAH_IMAGE_BINARY_DEFAULT_USER = CONFIG.get('BUILDAH_IMAGE_BINARY_DEFAULT_USER') or '65535'
 
 def buildah_image(
     name: str,
     dockerfile: str,
     srcs: list = [],
     repository: str = "",
+    labels: list = [],
     visibility: list = [],
 ):
     """Build rule for building a Buildah image
+
+    Args:
+        name: The name of the build rule.
+        dockerfile: The dockerfile to build the image with.
+        srcs: The src files for the docker image. These will be included in the image build context.
+        repository: The name of the image repository to build the image under. By default this is determined from the please package and rule name.
+        labels: The additonal labels to add to the build rule.
+        visibility: The targets to make the toolchain visible to.
     """
 
-    build_context_rule = _build_context(name, [dockerfile] + srcs)
-    repository_rule=_repository(name, repository, visibility)
-    tag_rule=_tag(name, build_context_rule, visibility)
-    fqn_rule=_fqn(name, repository_rule, tag_rule, visibility)
+    build_context_rule = _build_context(name, [dockerfile] + srcs, labels, visibility)
+    repository_rule=_repository(name, repository, labels, visibility)
+    tag_rule=_tag(name, build_context_rule, labels, visibility)
+    fqn_rule=_fqn(name, repository_rule, tag_rule, labels, visibility)
 
-    genrule(
+    build_rule=genrule(
         name = name,
         srcs = {
             "dockerfile": [dockerfile],
@@ -56,37 +69,153 @@ cat <<EOF > build_container.sh
 #!/bin/bash
 set -Eeuo pipefail
 tag=$tag
-$buildah bud -t $tag - < $SRCS_CONTEXT
+$buildah bud -f $SRCS_DOCKERFILE -t $tag - < $SRCS_CONTEXT
 $buildah push --format docker $tag docker-archive:$OUTS:$tag
 EOF
 chmod +x build_container.sh
 $buildah unshare ./build_container.sh
-        """
+        """,
+        labels = labels,
+        visibility = visibility,
     )
 
-def buildah_mirror(
+    _push_rule(name, fqn_rule, build_rule, labels, visibility)
+
+
+def buildah_image_binary(
     name: str,
-    src: str,
+    binary: str,
     repository: str = "",
+    user: str = BUILDAH_IMAGE_BINARY_DEFAULT_USER,
+    cmd: str = "",
+    labels: list = [],
     visibility: list = [],
 ):
-    """Build rule for mirroring an OCI image.
-    """
-    pass
+    """Build rule for building a Buildah image that has a single binary in.
 
+    Args:
+        name: The name of the build rule.
+        binary: The binary for the image. This will be made the entrypoint.
+        repository: The name of the image repository to build the image under. By default this is determined from the please package and rule name.
+        user: The user to configure the image with.
+        cmd: The default command to pass to the binary.
+        labels: The additonal labels to add to the build rule.
+        visibility: The targets to make the toolchain visible to.
+    """
+    image_params=genrule(
+        name = f"_{name}_image_params",
+        outs = [f"_{name}_image_params"],
+        cmd = f"echo '{user},{cmd}' > $OUTS",
+    )
+    build_context_rule = _build_context(name, [binary, image_params], labels, visibility)
+    repository_rule=_repository(name, repository, labels, visibility)
+    tag_rule=_tag(name, build_context_rule, labels, visibility)
+    fqn_rule=_fqn(name, repository_rule, tag_rule, labels, visibility)
+
+    build_rule=genrule(
+        name = name,
+        srcs = {
+            "binary": [binary],
+            "fqn": [fqn_rule],
+            "buildah_policy": [BUILDAH_POLICY],
+            "buildah_registries": [BUILDAH_REGISTRIES],
+        },
+        outs = [f"{name}_image.tar"],
+        tools = [BUILDAH_TOOL],
+        cmd = f"""
+set -exuo pipefail
+export USER=$(id -un)
+tag=$(<$SRCS_FQN)
+buildah=$TOOLS
+
+buildah_config_dir="$HOME/.config/containers"
+mkdir -p "$buildah_config_dir"
+cp $SRCS_BUILDAH_POLICY "$buildah_config_dir/policy.json"
+cp $SRCS_BUILDAH_REGISTRIES "$buildah_config_dir/registries.conf"
+
+cat <<EOF > build_container.sh
+#!/bin/bash
+set -Eeuo pipefail
+tag=$tag
+new_container=\\\$($buildah from scratch)
+$buildah copy \\\$new_container $SRCS_BINARY /binary
+$buildah config --entrypoint '["/binary"]' \\\$new_container
+$buildah config --user '{user}' \\\$new_container
+$buildah config --cmd '{cmd}' \\\$new_container
+$buildah commit --format docker --rm --squash \\\$new_container $tag
+$buildah push --format docker $tag docker-archive:$OUTS:$tag
+EOF
+chmod +x build_container.sh
+$buildah unshare ./build_container.sh
+        """,
+        labels = labels,
+        visibility = visibility,
+    )
+
+    _push_rule(name, fqn_rule, build_rule, labels, visibility)
+
+def _push_rule(
+    name: str,
+    fqn_rule: str,
+    build_rule: str,
+    labels: list = [],
+    visibility: list = [],
+):
+    push_script=sh_cmd(
+        name = f"_{name}_push_script",
+        shell = "/bin/bash",
+        srcs = [fqn_rule],
+        data = [build_rule, BUILDAH_TOOL],
+        cmd = f"""
+set -euo pipefail
+root_dir="$(dirname $(dirname $(dirname $PWD | sed "s#$PKG_DIR##")))"
+buildah="\\\$root_dir/$(out_location {BUILDAH_TOOL})"
+tag=$(<$(location {fqn_rule}))
+
+\\\$buildah pull docker-archive:"\\\$root_dir/$(out_location {build_rule})"
+\\\$buildah images
+\\\$buildah push --rm "\\\$tag"
+        """
+    )
+    sh_cmd(
+        name = f"{name}_push",
+        shell = "/bin/bash",
+        data = [build_rule, BUILDAH_TOOL, BUILDAH_POLICY, BUILDAH_REGISTRIES, push_script],
+        cmd = f"""
+set -euo pipefail
+root_dir="$(dirname $(dirname $(dirname $PWD | sed "s#$PKG_DIR##")))"
+export USER=$(id -un)
+
+buildah="\\\$root_dir/$(out_location {BUILDAH_TOOL})"
+
+buildah_config_dir="\\\$HOME/.config/containers"
+mkdir -p "\\\$buildah_config_dir"
+cp "\\\$root_dir/$(out_location {BUILDAH_POLICY})" "\\\$buildah_config_dir/policy.json"
+cp "\\\$root_dir/$(out_location {BUILDAH_REGISTRIES})" "\\\$buildah_config_dir/registries.conf"
+
+\\\$buildah unshare "\\\$root_dir/$(out_location {push_script})"
+        """,
+        visibility = visibility,
+        labels = labels,
+    )
 
 def _build_context(
     name: str,
     srcs: list,
+    labels: list = [],
+    visibility: list = [],
 ):
     return tarball(
         name = f"{name}_build_context",
         srcs = srcs,
+        labels = labels,
+        visibility = visibility,
     )
 
 def _repository(
     name: str,
     repository: str = "",
+    labels: list = [],
     visibility: list = [],
 ):
     if not repository:
@@ -95,13 +224,14 @@ def _repository(
         name = f"{name}_repository",
         outs = [f"{name}_repository"],
         cmd = f"echo \"{repository}\" > $OUTS",
+        labels = ["buildah-repository"] + labels,
         visibility = visibility,
-        labels = ["container-repository"],
     )
 
 def _tag(
     name: str,
     build_context_rule: str,
+    labels: list = [],
     visibility: list = [],
 ):
     return genrule(
@@ -109,6 +239,7 @@ def _tag(
         outs = [f"{name}_tag"],
         srcs = [build_context_rule],
         cmd = f"echo $(cat $SRCS | sha256sum - | cut -f1 -d\" \") > $OUTS",
+        labels = labels,
         visibility = visibility,
     )
 
@@ -116,6 +247,7 @@ def _fqn(
     name: str,
     repository_rule: str,
     tag_rule: str,
+    labels: list = [],
     visibility: list = [],
 ):
     return genrule(
@@ -125,10 +257,12 @@ def _fqn(
             "tag": [tag_rule],
         },
         outs = [f"{name}_fqn"],
-        cmd = f"""
-repository=$(cat $SRCS_REPOSITORY)
-tag=$(cat $SRCS_TAG)
-echo "$repository:$tag" > $OUTS
-""",
+        cmd = """
+set -euo pipefail
+repository=$(<$SRCS_REPOSITORY)
+tag=$(<$SRCS_TAG)
+echo \"$repository:$tag\" > $OUTS
+    """,
+        labels = labels,
         visibility = visibility,
     )

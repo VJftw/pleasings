@@ -1,0 +1,3 @@
+[buildconfig]
+; buildah
+buildah-tool = //third_party/buildah:buildah

@@ -31,6 +31,10 @@ buildah-tool = //third_party/buildah:buildah
 terraform-module-builder-src = //terraform/scripts:module_builder
 terraform-runner-src = //terraform/scripts:runner
 terraform-workspace-builder-src = //terraform/scripts:workspace_builder
+; buildah
+buildah-policy = //third_party/buildah:policy
+buildah-registries = //buildah/test:registries_test
+buildah-repository-prefix = localhost:5000/
 
 [proto]
 protoctool = //third_party/proto:protoc
