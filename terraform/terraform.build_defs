@@ -15,7 +15,6 @@ def terraform_toolchain(
     visibility:list = [],
 ):
     """Build rule for obtaining a version of the Terraform CLI.
-
     Args:
         name: The name of the build rule.
         version: The version of Terraform to download in MAJOR.MINOR.PATCH format. e.g. "0.12.3".
@@ -52,7 +51,6 @@ def terraform_provider(
     visibility: list = [],
 ):
     """Build rule for obtaining a Terraform Provider.
-
     Args:
         name: The name of the build rule.
         version: The version of Terraform the Terraform Provider MAJOR.MINOR.PATCH format. e.g. "2.1.2".
@@ -74,7 +72,7 @@ def terraform_provider(
     provider=genrule(
         name = name,
         srcs = [provider_download],
-        # We extract the binary into a directory here 
+        # We extract the binary into a directory here
         # to preserve the filename which is usually
         # terraform-provider-aws_v2.70.0_x4
         cmd = f"""
@@ -93,7 +91,7 @@ echo "{version}" > $OUTS/.version
 
 def terraform_module(
     name: str,
-    srcs: list = None, 
+    srcs: list = None,
     url: str = None,
     strip: list = [],
     hashes: list = [],
@@ -103,7 +101,6 @@ def terraform_module(
     visibility: list = [],
 ):
     """Build rule for obtaining a remote Terraform Module or defining a local Terraform module.
-
     Args:
         name: The name of the build rule.
         srcs: The source Terraform files for the Terraform module.
@@ -150,11 +147,9 @@ def terraform_module(
         cmd = f"""
 set -euo pipefail
 {_bash_version_check_cmd}
-
 URL="{url}"
 OG_MODULE_DIR="$(location {og_module})"
 {strip_bash_array}
-
 source "$(out_location {MODULE_BUILDER_SRC})"
         """,
     )
@@ -172,7 +167,6 @@ def terraform_root(
     visibility: list = [],
 ):
     """Build rule for running Terraform against Terraform configuration.
-
     Args:
         name: The name of the build rule.
         srcs: The source Terraform files for the root module.
@@ -187,7 +181,7 @@ def terraform_root(
     """
     # determine the terraform binary to use
     toolchain = toolchain or TERRAFORM_DEFAULT_TOOLCHAIN
-    
+
     # create a root for terraform to use
     root = _terraform_root(name, srcs, var_files, modules, toolchain)
 
@@ -198,23 +192,12 @@ def terraform_root(
     pre_binary_bash_array = _to_bash_array("PRE_BINARIES", [f"$(out_exe {b})" for b in pre_binaries])
     post_binary_bash_array = _to_bash_array("POST_BINARIES", [f"$(out_exe {b})" for b in post_binaries])
 
-    cmds = {
-        "plan": ["init", "plan"],
-        "apply": ["init", "apply"],
-        "destroy": ["init", "destroy"],
-        "bin": [],
-    }
-    for k in cmds.keys():
-        commands = cmds[k]
-        cmd_bash_array = _to_bash_array("TERRAFORM_CMDS", commands)
-
-        sh_cmd(
-            name = f"{name}_tf_{k}",
-            shell = "/bin/bash",
-            cmd = f"""
+    terraform_root_bin = sh_cmd(
+        name = f"{name}_bin",
+        shell = "/bin/bash",
+        cmd = f"""
 set -euo pipefail
 {_bash_version_check_cmd}
-
 OS="$OS"
 ARCH="$ARCH"
 PLZ_OUT_RELATIVE="$(echo $(out_location {root}) | cut -f1 -d/)"
@@ -222,20 +205,43 @@ TERRAFORM_BIN="$(out_exe {toolchain})"
 TERRAFORM_ROOT="$(out_location {root})"
 {plugins_bash_array}
 {pre_binary_bash_array}
-{cmd_bash_array}
 {post_binary_bash_array}
-
 source "$(out_location {RUNNER_SRC})"
+        """,
+        data = [root, toolchain, RUNNER_SRC] + plugins + pre_binaries + post_binaries,
+        labels = [f"terraform_bin"] + labels,
+        visibility = visibility,
+    )
+
+    cmds = {
+        "plan": ["init", "plan"],
+        "apply": ["init", "apply"],
+        "destroy": ["init", "destroy"],
+    }
+    for k in cmds.keys():
+        commands = cmds[k]
+        cmd_bash_array = _to_bash_array("TERRAFORM_CMDS", commands)
+
+        sh_cmd(
+            name = f"{name}_{k}",
+            shell = "/bin/bash",
+            cmd = f"""
+set -euo pipefail
+{_bash_version_check_cmd}
+{cmd_bash_array}
+source "$(out_location {terraform_root_bin})"
             """,
-            data = [root, toolchain, RUNNER_SRC] + plugins + pre_binaries + post_binaries,
+            data = [terraform_root_bin, root, toolchain, RUNNER_SRC] + plugins + pre_binaries + post_binaries,
             labels = [f"terraform_{k}"] + labels,
             visibility = visibility,
         )
 
-    _linters(name, toolchain, root, labels, visibility)
+    _linters(name, terraform_root_bin, toolchain, root, labels, visibility)
+
+    return terraform_root_bin
 
 _bash_version_check_cmd = """
-if [ -z "${BASH_VERSINFO}" ] || [ -z "${BASH_VERSINFO[0]}" ] || [ ${BASH_VERSINFO[0]} -lt 4 ]; then 
+if [ -z "${BASH_VERSINFO}" ] || [ -z "${BASH_VERSINFO[0]}" ] || [ ${BASH_VERSINFO[0]} -lt 4 ]; then
     echo "This script requires Bash version >= 4"
     exit 1
 fi
@@ -280,19 +286,17 @@ def _terraform_root(
         cmd = f"""
 set -euo pipefail
 {_bash_version_check_cmd}
-
 CONFIG_OS="{CONFIG.OS}"
 CONFIG_ARCH="{CONFIG.ARCH}"
 TERRAFORM_BIN="$(out_exe {toolchain})"
-
 {module_paths_bash_map}
-
-source "$(out_location {WORKSPACE_BUILDER_SRC})"
+source "$(location {WORKSPACE_BUILDER_SRC})"
         """,
     )
 
 def _linters(
     name:str,
+    terraform_root_bin:str,
     toolchain:str,
     root:str,
     labels:list,
@@ -307,21 +311,15 @@ def _linters(
         cmd_bash_array = _to_bash_array("TERRAFORM_CMDS", commands)
 
         sh_cmd(
-            name = f"{name}_tf_{k}",
+            name = f"{name}_{k}",
             shell = "/bin/bash",
             cmd = f"""
 set -euo pipefail
 {_bash_version_check_cmd}
-
-PLZ_OUT_RELATIVE="$(echo $(out_location {root}) | cut -f1 -d/)"
-TERRAFORM_BIN="$(out_exe {toolchain})"
-TERRAFORM_ROOT="$(out_location {root})"
-
 {cmd_bash_array}
-
-source "$(out_location {RUNNER_SRC})"
+source "$(out_location {terraform_root_bin})"
             """,
-            data = [root, toolchain, RUNNER_SRC],
+            data = [terraform_root_bin, root, toolchain, RUNNER_SRC],
             labels = [f"terraform_{k}", "lint"] + labels,
             visibility = visibility,
         )
