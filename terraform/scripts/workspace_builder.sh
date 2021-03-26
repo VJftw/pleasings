@@ -26,7 +26,7 @@ function modules {
 function build_env_to_tf_srcs {
     find "${OUTS}" -maxdepth 1 -name "*.tf" -exec sed -i "s#\$PKG#${PKG}#g" {} +
     find "${OUTS}" -maxdepth 1 -name "*.tf" -exec sed -i "s#\$PKG_DIR#${PKG_DIR}#g" {} +
-    NAME="$(echo "${NAME}" | sed 's/^_\(.*\)_wd$/\1/')"
+    NAME="$(echo "${NAME}" | sed 's/^_\(.*\)_root$/\1/')"
     find "${OUTS}" -maxdepth 1 -name "*.tf" -exec sed -i "s#\$NAME#${NAME}#g" {} +
     find "${OUTS}" -maxdepth 1 -name "*.tf" -exec sed -i "s#\$ARCH#${ARCH}#g" {} +
     find "${OUTS}" -maxdepth 1 -name "*.tf" -exec sed -i "s#\$OS#${OS}#g" {} +
