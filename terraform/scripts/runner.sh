@@ -27,7 +27,7 @@ PATH="$(dirname "${TERRAFORM_BIN}"):$PATH"
 export PATH
 
 # prepare_workspace prepares a directory to run Terraform commands in.
-# We cannot run Terraform commands in the `plz-out/gen/<rule>` workspace 
+# We cannot run Terraform commands in the `plz-out/gen/<rule>` workspace
 # as Terraform creates symlinks which plz warns us may be removed, thus
 # we create a `plz-out/terraform` directory and `rsync` the following:
 # - Generated Terraform Root files.
@@ -83,7 +83,7 @@ function plugins_v0.13+ {
     done
 }
 
-# tf_clean_output strips the Terraform output down. 
+# tf_clean_output strips the Terraform output down.
 # This is useful in CI/CD where Terraform logs are usually noisy by default.
 function tf_clean_output {
     local cmds extra_args is_last
@@ -121,19 +121,20 @@ for bin in "${PRE_BINARIES[@]}"; do
 done
 
 # execute terraform cmds
-for i in "${!TERRAFORM_CMDS[@]}"; do
-    cmd="${TERRAFORM_CMDS[i]}"
-    if [ $((i+1)) == "${#TERRAFORM_CMDS[@]}" ]; then
-        tf_clean_output "${cmd}" "true" "$@" 
-    else
-        tf_clean_output "${cmd}" "false" "$@" 
-    fi
+if [[ -v TERRAFORM_CMDS ]]; then
+    for i in "${!TERRAFORM_CMDS[@]}"; do
+        cmd="${TERRAFORM_CMDS[i]}"
+        if [ $((i+1)) == "${#TERRAFORM_CMDS[@]}" ]; then
+            tf_clean_output "${cmd}" "true" "$@"
+        else
+            tf_clean_output "${cmd}" "false" "$@"
+        fi
 
-    echo ""
-done
-
-# if there's no TERRAFORM_CMDS given, we assume that we just want to run Terraform directly with the given args.
-if [ "${#TERRAFORM_CMDS[@]}" == "0" ]; then
+        echo ""
+    done
+else
+    # if there's no TERRAFORM_CMDS given, we assume that we just want to run Terraform directly with the given args.
+    echo "..> terraform ${@}"
     "${TERRAFORM_BIN}" "${@}"
 fi
 
