@@ -24,12 +24,12 @@ function modules {
 # This is useful for re-using source file in multiple workspaces,
 # such as templating a Terraform remote state configuration.
 function build_env_to_tf_srcs {
-    find "${PKG_DIR}" -maxdepth 1 -name "*.tf" -exec sed -i "s#\$PKG#${PKG}#g" {} +
-    find "${PKG_DIR}" -maxdepth 1 -name "*.tf" -exec sed -i "s#\$PKG_DIR#${PKG_DIR}#g" {} +
+    find "${OUTS}" -maxdepth 1 -name "*.tf" -exec sed -i "s#\$PKG#${PKG}#g" {} +
+    find "${OUTS}" -maxdepth 1 -name "*.tf" -exec sed -i "s#\$PKG_DIR#${PKG_DIR}#g" {} +
     NAME="$(echo "${NAME}" | sed 's/^_\(.*\)_wd$/\1/')"
-    find "${PKG_DIR}" -maxdepth 1 -name "*.tf" -exec sed -i "s#\$NAME#${NAME}#g" {} +
-    find "${PKG_DIR}" -maxdepth 1 -name "*.tf" -exec sed -i "s#\$ARCH#${ARCH}#g" {} +
-    find "${PKG_DIR}" -maxdepth 1 -name "*.tf" -exec sed -i "s#\$OS#${OS}#g" {} +
+    find "${OUTS}" -maxdepth 1 -name "*.tf" -exec sed -i "s#\$NAME#${NAME}#g" {} +
+    find "${OUTS}" -maxdepth 1 -name "*.tf" -exec sed -i "s#\$ARCH#${ARCH}#g" {} +
+    find "${OUTS}" -maxdepth 1 -name "*.tf" -exec sed -i "s#\$OS#${OS}#g" {} +
 }
 
 # auto_load_var_files copies the given var files into the 
@@ -48,13 +48,13 @@ if [[ -v SRCS_MODULES ]]; then
     modules
 fi
 
-# substitute build env vars to srcs
-build_env_to_tf_srcs
-
 # shift srcs into outs
 for src in $SRCS_SRCS; do 
     cp "${src}" "${OUTS}/"
 done
+
+# substitute build env vars to srcs
+build_env_to_tf_srcs
 
 # shift var files into outs
 if [[ -v SRCS_VAR_FILES ]]; then
